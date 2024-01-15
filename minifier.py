@@ -1,13 +1,8 @@
 import os
 import re
 import sys
-
-fileToOpen = "temp.nfp.css"
-fileToWrite = "output.css"
-
-# get drag and drop file from Explorer
-if len(sys.argv) > 1:
-	fileToOpen = sys.argv[1]
+import json
+import subprocess
 
 format = 'utf-8'
 
@@ -129,27 +124,84 @@ def processRuleset(ruleset):
 
 	return ruleset
 
-def main():
-	contents = open(fileToOpen, mode='r', encoding=format).read()
-	sizeBefore = len(contents)
-	with open(fileToWrite, 'w+', encoding=format) as file:
-		iterations = 0
-		while True:
-			iterations += 1
-			oldContents = contents
-			contents = processLayer(contents);
-			# continue only when no changes have been made
-			if oldContents == contents:
-				break
+def minify(text):
+	iterations = 0
+	while True:
+		iterations += 1
+		oldText = text
+		
+		text = processLayer(text)
+		
+		# continue only when no changes have been made
+		if oldText == text:
+			return text
 
-		file.write(contents)
+def process_scm_file(file_path):
+	with open(file_path, 'r') as f:
+		data = json.load(f)
 
-		sizeAfter = len(contents)
+	input_file = os.path.join(os.path.dirname(file_path), data.get('in'))
+	output_file = os.path.join(os.path.dirname(file_path), data.get('out'))
+	min_repl = data.get('minify')
+	reg_repl = data.get('replace')
+	
+	process_file(input_file, output_file, min_repl, reg_repl)
+
+def process_directory(directory):
+	for root, dirs, files in os.walk(directory):
+		for file in files:
+			if file == 'scm.json' or file.endswith('.scm.json'):
+				file_path = os.path.join(root, file)
+				process_scm_file(file_path)
+			
+def minify_capture_groups(match):
+	if len(match.groups()) == 0:
+		return minify(match.group(0))
+	
+	out = match.group(0)
+	out = out.replace(match.group(1), minify(match.group(1)))
+	return out
+			
+def process_file(input_path, output_path, min_repl, reg_repl):
+	if min_repl == None:
+		min_repl = ["^[\s\S]+$"]
+	if reg_repl == None:
+		reg_repl = []
+	
+	with open(input_path, mode='r', encoding=format) as input_file:
+		output = input_file.read()
+	sizeBefore = len(output)
+	
+	with open(output_path, 'w+', encoding=format) as output_file:
+		# replace non-minified sections
+		for pattern, replacement in reg_repl:
+			output = re.sub(pattern, replacement, output)
+	
+		# send to minify function to get whittled down
+		for pattern in min_repl:
+			output = re.sub(pattern, minify_capture_groups, output)
+
+		output_file.write(output)
+
+		sizeAfter = len(output)
 		try:
 			percent = 100 - round(sizeAfter / sizeBefore * 100)
-			print(f'Minification complete after {iterations} iterations. Sizes: {sizeBefore}/{sizeAfter} Reduction: {percent}%')
+			print(f'Minification complete. Sizes: {sizeBefore}/{sizeAfter} Reduction: {percent}%')
 		except:
 			print('Error calculating minification. Perhaps none occured?')
 
-if __name__ == '__main__':
-	main()
+if __name__ == "__main__":
+	if len(sys.argv) > 1:
+		input_path = sys.argv[1]
+		if os.path.isfile(input_path):
+			if len(sys.argv) > 2:
+				output_path = sys.argv[2]
+				process_file(input_path, output_path)
+			else:
+				raise 'If the first argument is a file then there must be an output argument provided.'
+		elif os.path.isdir(input_path):
+			process_directory(input_path)
+		else:
+			raise 'Argument not recognised as path.'
+	else:
+		raise 'No arguments provided..'
