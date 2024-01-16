@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import subprocess
+import uuid
 
 format = 'utf-8'
 
@@ -135,12 +136,36 @@ def processProperty(property):
 	return property.strip()
 	
 def processValue(value):
+	# put anything inside quotes into a temporary dictionary for safekeeping
+	safety_box = []
+	for match in re.finditer(r'(?<!\\)".*?(?<!\\)"|(?<!\\)\'.*?(?<!\\)\'', value):
+		text = match.group(0)
+		id = str(uuid.uuid4().hex)
+		value = value.replace(text, id)
+		safety_box.append([id, text])
+
+	# perform replacements on value after it has all quotes (i.e manual content) taken out of it
 	replacements = [
 		# !important markers
 		[r'\s*(:|(?:!\s*important\s*)?)\s*$', r'\1'],
+		# multiple values
+		[r'\s+,', r','],
+		[r',\s+', r','],
+		# parenthetical statements - doesn't touch whitespace in the middle because that breaks most shit
+		[r'(\w+\()\s+', r'\1'],
+		[r'\s+\)', r')'],
+		# I can't think of any values that require newlines
+		[r'\n+\s*', r' '],
 	]
-	
 	value = replaceAll(value, replacements)
+	
+	# put quotes back in REVERSE order from how they were put in so that all the replacements will work correctly
+	if len(safety_box) > 0:
+		for id, text in reversed(safety_box):
+			if id in value:
+				value = value.replace(id, text)
+			else:
+				raise RuntimeError('Could not insert quotes back into value. This is likely a programming error, but on the chance it was a fluke UUID duplication try running it once more.')
 	
 	return value.strip()
 
