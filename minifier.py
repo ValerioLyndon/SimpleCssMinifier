@@ -113,16 +113,36 @@ def processLayer(text):
 
 
 def processRuleset(ruleset):
+	# this will definitely have issues with semi colons in content text etc. Need to solve for this
+	input_rules = ruleset.split(';')
+	output_rules = []
+	
+	for rule in input_rules:
+		if len(rule) == 0:
+			continue
+		# everything before first colon is the property. Everything after is the value
+		split = rule.split(':')
+		property = split.pop(0)
+		value = ':'.join(split)
+		output_rules.append(':'.join([
+			processProperty(property),
+			processValue(value)
+		]))
+
+	return ';'.join(output_rules)
+	
+def processProperty(property):
+	return property.strip()
+	
+def processValue(value):
 	replacements = [
-		# space between properties
-		[r'\s*(:|(?:!important\s*)?;)\s*', r'\1'],
-		# ending semi-colons
-		[r';$', r''],
+		# !important markers
+		[r'\s*(:|(?:!\s*important\s*)?)\s*$', r'\1'],
 	]
-
-	ruleset = replaceAll(ruleset, replacements)
-
-	return ruleset
+	
+	value = replaceAll(value, replacements)
+	
+	return value.strip()
 
 def minify(text):
 	iterations = 0
